@@ -1,44 +1,13 @@
 {
   "manifest_version": 3,
   "name": "K2 XP Campaign Prototype",
-  "version": "0.3.0",
-  "description": "K2 XP campaign prototype with a no-code journey recorder, completion marker, and monitored journey rules.",
-  "permissions": [
-    "storage",
-    "tabs"
-  ],
-  "host_permissions": [
-    "<all_urls>"
-  ],
-  "background": {
-    "service_worker": "background.js"
-  },
-  "content_scripts": [
-    {
-      "matches": [
-        "<all_urls>"
-      ],
-      "js": [
-        "content.js"
-      ],
-      "run_at": "document_idle"
-    }
-  ],
-  "action": {
-    "default_popup": "popup.html",
-    "default_title": "K2 XP",
-    "default_icon": {
-      "16": "icon16.png",
-      "32": "icon32.png",
-      "48": "icon48.png",
-      "128": "icon128.png"
-    }
-  },
+  "version": "0.4.0",
+  "description": "K2 XP campaign prototype with semantic no-code journey recording and verified completion states.",
+  "permissions": ["storage", "tabs"],
+  "host_permissions": ["<all_urls>"],
+  "background": {"service_worker": "background.js"},
+  "content_scripts": [{"matches": ["<all_urls>"], "js": ["content.js"], "run_at": "document_idle"}],
+  "action": {"default_popup": "popup.html", "default_title": "K2 XP", "default_icon": {"16":"icon16.png","32":"icon32.png","48":"icon48.png","128":"icon128.png"}},
   "options_page": "admin.html",
-  "icons": {
-    "16": "icon16.png",
-    "32": "icon32.png",
-    "48": "icon48.png",
-    "128": "icon128.png"
-  }
+  "icons": {"16":"icon16.png","32":"icon32.png","48":"icon48.png","128":"icon128.png"}
 }
