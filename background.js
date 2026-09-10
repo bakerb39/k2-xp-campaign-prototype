@@ -68,6 +68,37 @@ async function processStandalonePageVisit(url,tabId){
   }
   return done;
 }
+async function processStandaloneEvent(e,sender){
+  const d=await chrome.storage.local.get(["campaigns"]);
+  const tab=sender?.tab?.id??e.tabId??null;
+  const cs=(d.campaigns||[]).filter(c=>c.enabled!==false&&c.trigger!=="journey"&&c.trigger!=="visit");
+  const done=[];
+  for(const c of cs){
+    if(!urlRuleMatches(c,e.url))continue;
+    let ok=false,detail="";
+    if(c.trigger==="click"&&e.action==="click"){
+      ok=(e.matchedCampaignIds||[]).includes(c.id)||(!c.selector&&true)||String(c.selector||"")===String(e.selector||"");
+      detail=`Button click${c.selector?` matched ${c.selector}`:""}`;
+    }else if(c.trigger==="form"&&e.action==="submit"){
+      ok=(e.matchedCampaignIds||[]).includes(c.id)||(!c.selector&&true)||String(c.selector||"")===String(e.selector||"");
+      detail=`Form submission${c.selector?` matched ${c.selector}`:""}`;
+    }else if(c.trigger==="element"&&e.action==="element"){
+      ok=(e.matchedCampaignIds||[]).includes(c.id)||String(c.selector||"")===String(e.selector||"");
+      detail=`Element appeared: ${c.selector||e.selector||"selector"}`;
+    }else if(c.trigger==="time"&&e.action==="time"){
+      const need=Math.max(0,Number(c.triggerValue||0));ok=Number(e.seconds||0)>=need;detail=`Time on page reached ${need} seconds`;
+    }else if(c.trigger==="scroll"&&e.action==="scroll"){
+      const need=Math.max(0,Math.min(100,Number(c.triggerValue||0)));ok=Number(e.percent||0)>=need;detail=`Scroll depth reached ${need}%`;
+    }else if(c.trigger==="custom"&&e.action==="custom"){
+      ok=!!c.activityId&&String(c.activityId)===String(e.activityId||"");detail=`Custom K2 event: ${c.activityId}`;
+    }
+    if(!ok)continue;
+    const result=await award(c,unwrap(e.url||""),detail);
+    done.push({campaign:c,result});
+    await showCampaignAward(tab,c,result);
+  }
+  return done;
+}
 
 function clickMatches(s,e){
   if(e.action!=="click"||!sameUrl(s.url,e.url))return false;
@@ -187,7 +218,7 @@ chrome.runtime.onMessage.addListener((m,sender,send)=>{
   if(m?.type==="K2_STOP_RECORDER"){(async()=>{const d=await chrome.storage.local.get(["recorderState"]),r={...(d.recorderState||EMPTY_RECORDER),active:false,stoppedAt:Date.now()};await chrome.storage.local.set({recorderState:r});send({ok:true})})();return true}
   if(m?.type==="K2_MARK_COMPLETE"){markComplete().then(send);return true}
   if(m?.type==="K2_RECORD_EVENT"){record(m.event||{},sender).then(send);return true}
-  if(m?.type==="K2_OBSERVED_EVENT"){processJourney({...m.event,url:unwrap(m.event?.url||""),destinationUrl:unwrap(m.event?.destinationUrl||"")},sender).then(send);return true}
+  if(m?.type==="K2_OBSERVED_EVENT"){const e={...m.event,url:unwrap(m.event?.url||""),destinationUrl:unwrap(m.event?.destinationUrl||"")};Promise.all([processStandaloneEvent(e,sender),processJourney(e,sender)]).then(([standalone,journey])=>send({standalone,journey}));return true}
 });
 
 chrome.tabs.onUpdated.addListener(async(tabId,info,tab)=>{
