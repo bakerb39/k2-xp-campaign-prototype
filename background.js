@@ -38,6 +38,37 @@ function stableSelector(v){v=String(v||"").trim();return /^#[\w-]+$/.test(v)||/\
 function sameDestination(a,b){a=norm(a);b=norm(b);return !!a&&!!b&&a===b}
 function recorderNoise(x){const t=`${x?.pageTitle||""} ${x?.elementText||""}`;return /browser isolation|zero trust mode/i.test(t)||(/isolation\.zscaler\.com/i.test(String(x?.url||""))&&!/[?&]original_url=/i.test(String(x?.url||"")))}
 
+function urlRuleMatches(c,url){
+  const actual=String(unwrap(url)||"");
+  const pattern=String(c?.urlPattern||"").trim();
+  if(!pattern)return false;
+  try{
+    switch(c.matchType){
+      case"exact":return actual===pattern||norm(actual)===norm(pattern);
+      case"startsWith":return actual.startsWith(pattern);
+      case"regex":return new RegExp(pattern).test(actual);
+      case"contains":
+      default:return actual.includes(pattern);
+    }
+  }catch{return false}
+}
+async function showCampaignAward(tab,c,result){
+  if(!result?.awarded||typeof tab!=="number")return;
+  try{await chrome.tabs.sendMessage(tab,{type:"K2_JOURNEY_AWARDED",campaign:c,xp:result.xp,total:result.total})}catch{}
+}
+async function processStandalonePageVisit(url,tabId){
+  const d=await chrome.storage.local.get(["campaigns"]);
+  const cs=(d.campaigns||[]).filter(c=>c.enabled!==false&&c.trigger==="visit");
+  const done=[];
+  for(const c of cs){
+    if(!urlRuleMatches(c,url))continue;
+    const result=await award(c,unwrap(url),`Page visit matched: ${c.matchType||"contains"} ${c.urlPattern}`);
+    done.push({campaign:c,result});
+    await showCampaignAward(tabId,c,result);
+  }
+  return done;
+}
+
 function clickMatches(s,e){
   if(e.action!=="click"||!sameUrl(s.url,e.url))return false;
   if(s.controlRole&&e.controlRole&&s.controlRole!==e.controlRole)return false;
@@ -88,21 +119,10 @@ async function processJourney(e,sender){
     let i=Number(p[k]||0);
     const steps=c.steps;
     if(i<0||i>=steps.length)i=0;
-
-    // A fresh visit to the exact recorded first page starts/restarts this journey.
     if(e.action==="page"&&steps[0]?.action==="page"&&norm(steps[0].url)===norm(e.url)){
-      i=1;
-      p[k]=i;
-      continue;
+      i=1;p[k]=i;continue;
     }
-
-    // EVERY kept step is required. No step is silently optional or skipped.
-    if(matches(steps[i],e)){
-      i++;
-    }else if(matches(steps[0],e)){
-      i=1;
-    }
-
+    if(matches(steps[i],e))i++;else if(matches(steps[0],e))i=1;
     if(i>=steps.length){
       const result=await award(c,e.url||"",`Completed required journey: ${steps.length} of ${steps.length} steps`);
       done.push({campaign:c,result});
@@ -172,7 +192,9 @@ chrome.runtime.onMessage.addListener((m,sender,send)=>{
 
 chrome.tabs.onUpdated.addListener(async(tabId,info,tab)=>{
   if(info.status!=="complete"||!tab.url||tab.url.startsWith("chrome://")||tab.url.startsWith("chrome-extension://"))return;
-  const e={action:"page",url:unwrap(tab.url),pageTitle:tab.title||"",elementText:tab.title||"",tabId};
+  const cleanUrl=unwrap(tab.url);
+  await processStandalonePageVisit(cleanUrl,tabId);
+  const e={action:"page",url:cleanUrl,pageTitle:tab.title||"",elementText:tab.title||"",tabId};
   await processJourney(e,{tab:{id:tabId}});
   await record(e,{tab:{id:tabId}});
 });
